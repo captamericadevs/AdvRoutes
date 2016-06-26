@@ -1,10 +1,12 @@
 package com.wordpress.captamericadevs.advroutes;
 
+import android.support.v4.app.FragmentManager;
 import android.graphics.Color;
 import android.location.Location;
 import android.os.AsyncTask;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -25,6 +27,8 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
+import com.wordpress.captamericadevs.advroutes.fragments.ButtonPanel;
+import com.wordpress.captamericadevs.advroutes.utils.DirectionsJSONParser;
 
 import org.json.JSONObject;
 
@@ -44,22 +48,22 @@ public class MapsActivity extends FragmentActivity implements
         GoogleApiClient.OnConnectionFailedListener,
         GoogleMap.OnMarkerDragListener,
         GoogleMap.OnMapClickListener,
-        GoogleMap.OnMapLongClickListener,
-        View.OnClickListener {
+        GoogleMap.OnMapLongClickListener, View.OnClickListener {
 
     private GoogleMap mMap;
+    //private ButtonPanel mBPanel;
+    private ImageButton buttonRide;
+    private ImageButton buttonPlan;
+    private ImageButton buttonLoad;
 
     //Set default LatLng
     private double longitude = 0.0;
     private double latitude = 0.0;
 
-    private ImageButton buttonRide;
-    private ImageButton buttonPlan;
-    private ImageButton buttonLoad;
-
     private GoogleApiClient googleApiClient;
 
     ArrayList<LatLng> markerPoints;
+    PolylineOptions lineOptions = null;
     TextView tvDistanceDuration;
 
     @Override
@@ -67,6 +71,11 @@ public class MapsActivity extends FragmentActivity implements
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
         tvDistanceDuration = (TextView) findViewById(R.id.tv_distance_time);
+
+        buttonRide = (ImageButton) findViewById(R.id.buttonRide);
+        buttonPlan = (ImageButton) findViewById(R.id.buttonPlan);
+        buttonLoad = (ImageButton) findViewById(R.id.buttonLoad);
+        buttonRide.setOnClickListener(this);
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
@@ -79,22 +88,32 @@ public class MapsActivity extends FragmentActivity implements
                 .addApi(LocationServices.API)
                 .build();
 
-        buttonRide = (ImageButton) findViewById(R.id.buttonRide);
-        buttonPlan = (ImageButton) findViewById(R.id.buttonPlan);
-        buttonLoad = (ImageButton) findViewById(R.id.buttonLoad);
-        buttonRide.setOnClickListener(this);
-        buttonPlan.setOnClickListener(this);
-        buttonLoad.setOnClickListener(this);
+        //mBPanel = new ButtonPanel();
+        //setFragment(mBPanel);
+
 
         markerPoints = new ArrayList<LatLng>();
+    }
 
-        AsyncBus.getInstance().register(this);
+    public void setFragment(Fragment frag)
+    {
+        FragmentManager fm = getSupportFragmentManager();
+        if (fm.findFragmentById(R.id.buttonpanel) == null) {
+            fm.beginTransaction().add(R.id.buttonpanel, frag).commit();
+        }
+
+    }
+
+    @Override
+    public void onClick(View v) {
+        if (v == buttonRide) {
+            getDirections();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        AsyncBus.getInstance().unregister(this);
 
     }
 
@@ -126,7 +145,6 @@ public class MapsActivity extends FragmentActivity implements
         // Add a marker and move the camera
         getCurrentLocation(); //Place marker at current location if available
         LatLng latLong = new LatLng(latitude, longitude);
-        mMap.addMarker(new MarkerOptions().position(latLong).draggable(true));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLong));
         mMap.setOnMarkerDragListener(this);
         mMap.setOnMapClickListener(this);
@@ -165,15 +183,6 @@ public class MapsActivity extends FragmentActivity implements
     }
 
     @Override
-    public void onClick(View v) {
-        if (v == buttonRide){
-            getCurrentLocation();
-            moveMap();
-            getDirections();
-        }
-    }
-
-    @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 
     }
@@ -186,17 +195,22 @@ public class MapsActivity extends FragmentActivity implements
         }
 
         markerPoints.add(latLng); //add point to our array
+        int size = markerPoints.size();
+        drawMarkers(latLng, size);
+    }
+
+    public void drawMarkers(LatLng latLng, int size){
         MarkerOptions nextMarker = new MarkerOptions();
         nextMarker.position(latLng);
         nextMarker.draggable(true);
 
-        if (markerPoints.size() == 1) //set the start point to GREEN
-        {
-            nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
-        }
-        else if (markerPoints.size() == 2) //set the destination to RED
+        if (size == 2) //set the end point to RED
         {
             nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+        }
+        else if (size == 1) //set the start to GREEN
+        {
+            nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
         }
         else
         {
@@ -204,14 +218,16 @@ public class MapsActivity extends FragmentActivity implements
         }
 
         mMap.addMarker(nextMarker);
+
     }
 
     @Override
     public void onMapLongClick(LatLng latLng) {
-        if (markerPoints.size() > 1) //if there are multiple points, clear them all
+        if (markerPoints.size() > 0) //if there are multiple points, clear them all
         {
             mMap.clear(); //clear the map
             markerPoints.clear();
+            tvDistanceDuration.setText("Distance: ~, Duration: ~");
         }
     }
 
@@ -237,18 +253,167 @@ public class MapsActivity extends FragmentActivity implements
         return url;
     }
 
-    private void getDirections(){
-        if(markerPoints.size() >= 2){
-            LatLng origin = markerPoints.get(0);
-            LatLng dest = markerPoints.get(1);
+    private class DownloadTask extends AsyncTask<String, Void, String> {
 
-            // Getting URL to the Google Directions API
-            String url = getDirectionsUrl(origin, dest);
+        // Downloading data in non-ui thread
+        @Override
+        protected String doInBackground(String... url) {
 
-            DownloadTask downloadTask = new DownloadTask();
+            // For storing data from web service
+            String data = "";
 
-            // Start downloading json data from Google Directions API
-            downloadTask.execute(url);
+            try{
+                // Fetching the data from web service
+                data = downloadUrl(url[0]);
+            }catch(Exception e){
+                Log.d("Background Task",e.toString());
+            }
+            return data;
+        }
+
+        // Executes in UI thread, after the execution of
+        // doInBackground()
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+
+            ParserTask parserTask = new ParserTask();
+
+            // Invokes the thread for parsing the JSON data
+            parserTask.execute(result);
+        }
+
+        /** A method to download json data from url */
+        private String downloadUrl(String strUrl) throws IOException {
+            String data = "";
+            InputStream iStream = null;
+            HttpURLConnection urlConnection = null;
+            try{
+                URL url = new URL(strUrl);
+
+                // Creating an http connection to communicate with url
+                urlConnection = (HttpURLConnection) url.openConnection();
+
+                // Connecting to url
+                urlConnection.connect();
+
+                // Reading data from url
+                iStream = urlConnection.getInputStream();
+
+                BufferedReader br = new BufferedReader(new InputStreamReader(iStream));
+
+                StringBuffer sb = new StringBuffer();
+
+                String line = "";
+                while( ( line = br.readLine()) != null){
+                    sb.append(line);
+                }
+
+                data = sb.toString();
+
+                br.close();
+
+            }catch(Exception e){
+                Log.d("Exception downloading", e.toString());
+            }finally{
+                iStream.close();
+                urlConnection.disconnect();
+            }
+            return data;
+        }
+    }
+
+    public class ParserTask extends AsyncTask<String, Integer, List<List<HashMap<String,String>>> > {
+
+        // Parsing the data in non-ui thread
+        @Override
+        protected List<List<HashMap<String, String>>> doInBackground(String... jsonData) {
+
+            JSONObject jObject;
+            List<List<HashMap<String, String>>> routes = null;
+
+            try{
+                jObject = new JSONObject(jsonData[0]);
+                DirectionsJSONParser parser = new DirectionsJSONParser();
+
+                // Starts parsing data
+                routes = parser.parse(jObject);
+            }catch(Exception e){
+                e.printStackTrace();
+            }
+            return routes;
+        }
+
+        // Executes in UI thread, after the parsing process
+        @Override
+        protected void onPostExecute(List<List<HashMap<String, String>>> result) {
+            ArrayList<LatLng> points = new ArrayList<LatLng>();
+            String distance = "";
+            String duration = "";
+
+            if(result.size()<1){
+                return;
+            }
+
+            // Traversing through all the routes
+            for(int i=0;i<result.size();i++){
+
+                // Fetching i-th route
+                List<HashMap<String, String>> path = result.get(i);
+
+                // Fetching all the points in i-th route
+                for(int j=0;j<path.size();j++){
+                    HashMap<String,String> point = path.get(j);
+
+                    if(j==0){    // Get distance from the list
+                        distance = (String)point.get("distance");
+                        continue;
+                    }else if(j==1){ // Get duration from the list
+                        duration = (String)point.get("duration");
+                        continue;
+                    }
+
+                    double lat = Double.parseDouble(point.get("lat"));
+                    double lng = Double.parseDouble(point.get("lng"));
+                    LatLng position = new LatLng(lat, lng);
+
+                    points.add(position);
+                }
+
+            }
+
+            // Adding all the points in the route to LineOptions
+            lineOptions = new PolylineOptions()
+                    .color(Color.BLUE)
+                    .width(8)
+                    .addAll(points);
+            mMap.addPolyline(lineOptions);
+
+            tvDistanceDuration.setText("Distance:"+distance + ", Duration:"+duration);
+        }
+    }
+
+    public void getDirections(){
+        int size = markerPoints.size();
+        //sort the point list if the final destination is in position 2 followed by waypoints
+        if(size > 2) {
+            markerPoints.add(markerPoints.get(1)); //put destination at end
+            markerPoints.remove(markerPoints.get(1)); //remove destination at position 2 and shift elements left
+        }
+        if(size >= 2) {
+            //loop through the waypoint list a draw route
+            for (int j = 0; j <= size-2; j++) {
+                LatLng origin = markerPoints.get(j);
+                LatLng dest = markerPoints.get(j+1);
+
+                // Getting URL to the Google Directions API
+                String url = getDirectionsUrl(origin, dest);
+
+                DownloadTask downloadTask = new DownloadTask();
+
+                // Start downloading json data from Google Directions API
+                downloadTask.execute(url);
+            }
         }
     }
 
