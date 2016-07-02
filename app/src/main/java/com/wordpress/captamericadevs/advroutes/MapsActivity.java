@@ -1,17 +1,18 @@
 package com.wordpress.captamericadevs.advroutes;
 
-import android.support.v4.app.FragmentManager;
 import android.graphics.Color;
 import android.location.Location;
-import android.os.AsyncTask;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
-import android.util.Log;
+import android.support.v4.app.LoaderManager;
+import android.support.v4.content.Loader;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.Toolbar;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
-import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -27,44 +28,34 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
-import com.wordpress.captamericadevs.advroutes.fragments.ButtonPanel;
-import com.wordpress.captamericadevs.advroutes.utils.DirectionsJSONParser;
+import com.wordpress.captamericadevs.advroutes.utils.DownloadTask;
+import com.wordpress.captamericadevs.advroutes.utils.ParserTask;
 
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 
-public class MapsActivity extends FragmentActivity implements
+public class MapsActivity extends AppCompatActivity implements
         OnMapReadyCallback,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
         GoogleMap.OnMarkerDragListener,
         GoogleMap.OnMapClickListener,
-        GoogleMap.OnMapLongClickListener, View.OnClickListener {
+        GoogleMap.OnMapLongClickListener,
+        View.OnClickListener
+{
+
+    public int DOWNLOAD_LOADER_ID = 1;
+    public int PARSER_LOADER_ID = 2;
+    private DownloadTask mDownloadLoader;
+    private ParserTask mParserLoader;
+    private LoaderManager mSupportLoaderManager;
 
     private GoogleMap mMap;
-    //private ButtonPanel mBPanel;
-    private ImageButton buttonRide;
-    private ImageButton buttonPlan;
-    private ImageButton buttonLoad;
-
-    //Set default LatLng
-    private double longitude = 0.0;
+    private double longitude = 0.0; //Set default LatLng
     private double latitude = 0.0;
+    ArrayList<LatLng> markerPoints;
+    TextView tvDistanceDuration;
 
     private GoogleApiClient googleApiClient;
-
-    ArrayList<LatLng> markerPoints;
-    PolylineOptions lineOptions = null;
-    TextView tvDistanceDuration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,10 +63,8 @@ public class MapsActivity extends FragmentActivity implements
         setContentView(R.layout.activity_maps);
         tvDistanceDuration = (TextView) findViewById(R.id.tv_distance_time);
 
-        buttonRide = (ImageButton) findViewById(R.id.buttonRide);
-        buttonPlan = (ImageButton) findViewById(R.id.buttonPlan);
-        buttonLoad = (ImageButton) findViewById(R.id.buttonLoad);
-        buttonRide.setOnClickListener(this);
+        Toolbar mainToolbar = (Toolbar) findViewById(R.id.main_toolbar);
+        setSupportActionBar(mainToolbar);
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
@@ -88,27 +77,39 @@ public class MapsActivity extends FragmentActivity implements
                 .addApi(LocationServices.API)
                 .build();
 
-        //mBPanel = new ButtonPanel();
-        //setFragment(mBPanel);
-
-
         markerPoints = new ArrayList<LatLng>();
-    }
-
-    public void setFragment(Fragment frag)
-    {
-        FragmentManager fm = getSupportFragmentManager();
-        if (fm.findFragmentById(R.id.buttonpanel) == null) {
-            fm.beginTransaction().add(R.id.buttonpanel, frag).commit();
-        }
-
+        mSupportLoaderManager = getSupportLoaderManager();
     }
 
     @Override
-    public void onClick(View v) {
-        if (v == buttonRide) {
-            getDirections();
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.activity_maps_action, menu);
+
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    /**
+     * On selecting action bar icons
+     * */
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Take appropriate action for each action item click
+        switch (item.getItemId()) {
+            case R.id.action_directions:
+                getDirections();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
         }
+    }
+
+
+    @Override
+    public void onClick(View v) {
+        //if (v == buttonRide) {
+            //getDirections();
+        //}
     }
 
     @Override
@@ -228,6 +229,9 @@ public class MapsActivity extends FragmentActivity implements
             mMap.clear(); //clear the map
             markerPoints.clear();
             tvDistanceDuration.setText("Distance: ~, Duration: ~");
+            for(int i = 1; i <= PARSER_LOADER_ID; i++ ) {
+                mSupportLoaderManager.destroyLoader(i);
+            }
         }
     }
 
@@ -253,146 +257,6 @@ public class MapsActivity extends FragmentActivity implements
         return url;
     }
 
-    private class DownloadTask extends AsyncTask<String, Void, String> {
-
-        // Downloading data in non-ui thread
-        @Override
-        protected String doInBackground(String... url) {
-
-            // For storing data from web service
-            String data = "";
-
-            try{
-                // Fetching the data from web service
-                data = downloadUrl(url[0]);
-            }catch(Exception e){
-                Log.d("Background Task",e.toString());
-            }
-            return data;
-        }
-
-        // Executes in UI thread, after the execution of
-        // doInBackground()
-        @Override
-        protected void onPostExecute(String result) {
-            super.onPostExecute(result);
-
-            ParserTask parserTask = new ParserTask();
-
-            // Invokes the thread for parsing the JSON data
-            parserTask.execute(result);
-        }
-
-        /** A method to download json data from url */
-        private String downloadUrl(String strUrl) throws IOException {
-            String data = "";
-            InputStream iStream = null;
-            HttpURLConnection urlConnection = null;
-            try{
-                URL url = new URL(strUrl);
-
-                // Creating an http connection to communicate with url
-                urlConnection = (HttpURLConnection) url.openConnection();
-
-                // Connecting to url
-                urlConnection.connect();
-
-                // Reading data from url
-                iStream = urlConnection.getInputStream();
-
-                BufferedReader br = new BufferedReader(new InputStreamReader(iStream));
-
-                StringBuffer sb = new StringBuffer();
-
-                String line = "";
-                while( ( line = br.readLine()) != null){
-                    sb.append(line);
-                }
-
-                data = sb.toString();
-
-                br.close();
-
-            }catch(Exception e){
-                Log.d("Exception downloading", e.toString());
-            }finally{
-                iStream.close();
-                urlConnection.disconnect();
-            }
-            return data;
-        }
-    }
-
-    public class ParserTask extends AsyncTask<String, Integer, List<List<HashMap<String,String>>> > {
-
-        // Parsing the data in non-ui thread
-        @Override
-        protected List<List<HashMap<String, String>>> doInBackground(String... jsonData) {
-
-            JSONObject jObject;
-            List<List<HashMap<String, String>>> routes = null;
-
-            try{
-                jObject = new JSONObject(jsonData[0]);
-                DirectionsJSONParser parser = new DirectionsJSONParser();
-
-                // Starts parsing data
-                routes = parser.parse(jObject);
-            }catch(Exception e){
-                e.printStackTrace();
-            }
-            return routes;
-        }
-
-        // Executes in UI thread, after the parsing process
-        @Override
-        protected void onPostExecute(List<List<HashMap<String, String>>> result) {
-            ArrayList<LatLng> points = new ArrayList<LatLng>();
-            String distance = "";
-            String duration = "";
-
-            if(result.size()<1){
-                return;
-            }
-
-            // Traversing through all the routes
-            for(int i=0;i<result.size();i++){
-
-                // Fetching i-th route
-                List<HashMap<String, String>> path = result.get(i);
-
-                // Fetching all the points in i-th route
-                for(int j=0;j<path.size();j++){
-                    HashMap<String,String> point = path.get(j);
-
-                    if(j==0){    // Get distance from the list
-                        distance = (String)point.get("distance");
-                        continue;
-                    }else if(j==1){ // Get duration from the list
-                        duration = (String)point.get("duration");
-                        continue;
-                    }
-
-                    double lat = Double.parseDouble(point.get("lat"));
-                    double lng = Double.parseDouble(point.get("lng"));
-                    LatLng position = new LatLng(lat, lng);
-
-                    points.add(position);
-                }
-
-            }
-
-            // Adding all the points in the route to LineOptions
-            lineOptions = new PolylineOptions()
-                    .color(Color.BLUE)
-                    .width(8)
-                    .addAll(points);
-            mMap.addPolyline(lineOptions);
-
-            tvDistanceDuration.setText("Distance:"+distance + ", Duration:"+duration);
-        }
-    }
-
     public void getDirections(){
         int size = markerPoints.size();
         //sort the point list if the final destination is in position 2 followed by waypoints
@@ -409,10 +273,10 @@ public class MapsActivity extends FragmentActivity implements
                 // Getting URL to the Google Directions API
                 String url = getDirectionsUrl(origin, dest);
 
-                DownloadTask downloadTask = new DownloadTask();
-
-                // Start downloading json data from Google Directions API
-                downloadTask.execute(url);
+                Bundle urlString = new Bundle();
+                urlString.putString("url", url);
+                mSupportLoaderManager.initLoader(DOWNLOAD_LOADER_ID, urlString, downloadLoaderListener);
+                DOWNLOAD_LOADER_ID = DOWNLOAD_LOADER_ID + 2;
             }
         }
     }
@@ -434,4 +298,49 @@ public class MapsActivity extends FragmentActivity implements
 
         moveMap();
     }
+
+    private LoaderManager.LoaderCallbacks<String> downloadLoaderListener = new LoaderManager.LoaderCallbacks<String>() {
+        @Override
+        public Loader<String> onCreateLoader(int id, Bundle args) {
+            mDownloadLoader = new DownloadTask(MapsActivity.this, args.getString("url"));
+            return mDownloadLoader;
+        }
+
+
+        @Override
+        public void onLoadFinished(Loader<String> arg0, String arg1) {
+            Bundle jsonData = new Bundle();
+            jsonData.putString("url", arg1);
+            mSupportLoaderManager.initLoader(PARSER_LOADER_ID, jsonData, parserLoaderListener);
+            PARSER_LOADER_ID = PARSER_LOADER_ID + 2;
+        }
+
+        @Override
+        public void onLoaderReset(Loader<String> arg0) {
+
+        }
+    };
+
+    private LoaderManager.LoaderCallbacks<ArrayList<LatLng>> parserLoaderListener = new LoaderManager.LoaderCallbacks<ArrayList<LatLng>>() {
+        @Override
+        public Loader<ArrayList<LatLng>> onCreateLoader(int id, Bundle args) {
+            mParserLoader = new ParserTask(MapsActivity.this, args.getString("url"));
+            return mParserLoader;
+        }
+
+
+        @Override
+        public void onLoadFinished(Loader<ArrayList<LatLng>> arg0, ArrayList<LatLng> arg1) {
+            PolylineOptions lineOptions = new PolylineOptions()
+                .color(Color.BLUE)
+                .width(8)
+                .addAll(arg1);
+            mMap.addPolyline(lineOptions);
+        }
+
+        @Override
+        public void onLoaderReset(Loader<ArrayList<LatLng>> arg0) {
+
+        }
+    };
 }
