@@ -12,7 +12,6 @@ import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
-import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -28,8 +27,8 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
-import com.wordpress.captamericadevs.advroutes.utils.DownloadTask;
-import com.wordpress.captamericadevs.advroutes.utils.ParserTask;
+import com.wordpress.captamericadevs.advroutes.utils.DirectionsDownloader;
+import com.wordpress.captamericadevs.advroutes.utils.DirectionsParserLoader;
 
 import java.util.ArrayList;
 
@@ -39,20 +38,23 @@ public class MapsActivity extends AppCompatActivity implements
         GoogleApiClient.OnConnectionFailedListener,
         GoogleMap.OnMarkerDragListener,
         GoogleMap.OnMapClickListener,
-        GoogleMap.OnMapLongClickListener,
-        View.OnClickListener
+        GoogleMap.OnMapLongClickListener
 {
 
     public int DOWNLOAD_LOADER_ID = 1;
     public int PARSER_LOADER_ID = 2;
-    private DownloadTask mDownloadLoader;
-    private ParserTask mParserLoader;
     private LoaderManager mSupportLoaderManager;
+    private boolean mFinished = false;
 
     private GoogleMap mMap;
     private double longitude = 0.0; //Set default LatLng
     private double latitude = 0.0;
     ArrayList<LatLng> markerPoints;
+
+    public static ArrayList<String> mDistance;
+    public static ArrayList<String> mDuration;
+    private double mTotalDist;
+    private double mTotalDurt;
     TextView tvDistanceDuration;
 
     private GoogleApiClient googleApiClient;
@@ -78,6 +80,10 @@ public class MapsActivity extends AppCompatActivity implements
                 .build();
 
         markerPoints = new ArrayList<LatLng>();
+        mDistance = new ArrayList<String>();
+        mDuration = new ArrayList<String>();
+        mTotalDist = 0.0;
+        mTotalDurt = 0.0;
         mSupportLoaderManager = getSupportLoaderManager();
     }
 
@@ -102,14 +108,6 @@ public class MapsActivity extends AppCompatActivity implements
             default:
                 return super.onOptionsItemSelected(item);
         }
-    }
-
-
-    @Override
-    public void onClick(View v) {
-        //if (v == buttonRide) {
-            //getDirections();
-        //}
     }
 
     @Override
@@ -162,15 +160,15 @@ public class MapsActivity extends AppCompatActivity implements
     }
 
     private void moveMap() {
-        String msg = latitude + ", "+ longitude;
-        LatLng latLng = new LatLng(latitude, longitude);
-
-        mMap.addMarker(new MarkerOptions().position(latLng).draggable(true).title("Start Here"));
-
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-        mMap.animateCamera(CameraUpdateFactory.zoomTo(15));
-
-        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+//        String msg = latitude + ", "+ longitude;
+//        LatLng latLng = new LatLng(latitude, longitude);
+//
+//        mMap.addMarker(new MarkerOptions().position(latLng).draggable(true).title("Origin"));
+//
+//        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+//        mMap.animateCamera(CameraUpdateFactory.zoomTo(15));
+//
+//        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
     }
 
     @Override
@@ -201,6 +199,7 @@ public class MapsActivity extends AppCompatActivity implements
     }
 
     public void drawMarkers(LatLng latLng, int size){
+        String markerTitle = "";
         MarkerOptions nextMarker = new MarkerOptions();
         nextMarker.position(latLng);
         nextMarker.draggable(true);
@@ -208,16 +207,20 @@ public class MapsActivity extends AppCompatActivity implements
         if (size == 2) //set the end point to RED
         {
             nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+            markerTitle = "Destination";
         }
         else if (size == 1) //set the start to GREEN
         {
             nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
+            markerTitle = "Origin";
         }
         else
         {
             nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
+            markerTitle = "Waypoint";
         }
 
+        nextMarker.title(markerTitle);
         mMap.addMarker(nextMarker);
 
     }
@@ -228,11 +231,14 @@ public class MapsActivity extends AppCompatActivity implements
         {
             mMap.clear(); //clear the map
             markerPoints.clear();
-            tvDistanceDuration.setText("Distance: ~, Duration: ~");
             for(int i = 1; i <= PARSER_LOADER_ID; i++ ) {
                 mSupportLoaderManager.destroyLoader(i);
             }
         }
+        mDistance = new ArrayList<>();
+        mDuration = new ArrayList<>();
+        mTotalDist = 0.0;
+        mTotalDurt = 0.0;
     }
 
     private String getDirectionsUrl(LatLng origin,LatLng dest){
@@ -296,14 +302,13 @@ public class MapsActivity extends AppCompatActivity implements
         latitude = marker.getPosition().latitude;
         longitude = marker.getPosition().longitude;
 
-        moveMap();
+        //moveMap();
     }
 
     private LoaderManager.LoaderCallbacks<String> downloadLoaderListener = new LoaderManager.LoaderCallbacks<String>() {
         @Override
         public Loader<String> onCreateLoader(int id, Bundle args) {
-            mDownloadLoader = new DownloadTask(MapsActivity.this, args.getString("url"));
-            return mDownloadLoader;
+            return new DirectionsDownloader(MapsActivity.this, args.getString("url"));
         }
 
 
@@ -324,8 +329,7 @@ public class MapsActivity extends AppCompatActivity implements
     private LoaderManager.LoaderCallbacks<ArrayList<LatLng>> parserLoaderListener = new LoaderManager.LoaderCallbacks<ArrayList<LatLng>>() {
         @Override
         public Loader<ArrayList<LatLng>> onCreateLoader(int id, Bundle args) {
-            mParserLoader = new ParserTask(MapsActivity.this, args.getString("url"));
-            return mParserLoader;
+            return new DirectionsParserLoader(MapsActivity.this, args.getString("url"));
         }
 
 
@@ -336,6 +340,27 @@ public class MapsActivity extends AppCompatActivity implements
                 .width(8)
                 .addAll(arg1);
             mMap.addPolyline(lineOptions);
+            getDistanceAndDuration(mFinished);
+            mFinished = true;
+        }
+
+        private void getDistanceAndDuration(boolean isFinished){
+            if(!isFinished){
+                int legs = mDistance.size();
+                Double totalDist = 0.0;
+                Double totalDurt = 0.0;
+                String temp = "";
+                for(int i = 0; i < legs; i++) {
+                    temp = mDistance.get(i).replaceAll("[a-z]", "");
+                    totalDist = totalDist + Double.parseDouble(temp);
+                    temp = mDuration.get(i).replaceAll("[a-zA-Z]", "");
+                    totalDurt = totalDurt + Double.parseDouble(temp);
+                }
+                mTotalDist = totalDist;
+                mTotalDurt = totalDurt;
+                String msg = "Distance: "+ mTotalDist + " mi, Duration: "+ mTotalDurt;
+                Toast.makeText(MapsActivity.this, msg, Toast.LENGTH_LONG).show();
+            }
         }
 
         @Override

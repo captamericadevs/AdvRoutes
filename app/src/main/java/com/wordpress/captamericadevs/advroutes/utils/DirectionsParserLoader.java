@@ -1,27 +1,26 @@
 package com.wordpress.captamericadevs.advroutes.utils;
 
 import android.content.Context;
-import android.content.Intent;
-import android.os.Bundle;
 import android.support.v4.content.AsyncTaskLoader;
+
 import com.google.android.gms.maps.model.LatLng;
 import com.wordpress.captamericadevs.advroutes.MapsActivity;
 
 import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
 /**
- * Created by Parker on 6/27/2016.
+ * Created by Parker on 7/3/2016.
  */
-public class ParserTask extends AsyncTaskLoader<ArrayList<LatLng>> {
+public class DirectionsParserLoader extends AsyncTaskLoader<ArrayList<LatLng>> {
 
-    public ArrayList<String> timeTable;
     private ArrayList<LatLng> mPoints;
     private String jsonData;
 
-    public ParserTask (Context context, String... inData){
+    public DirectionsParserLoader (Context context, String... inData){
         super(context);
         jsonData = inData[0];
         mPoints = null;
@@ -69,7 +68,6 @@ public class ParserTask extends AsyncTaskLoader<ArrayList<LatLng>> {
         ArrayList<LatLng> points = new ArrayList<>();
         String distance = "";
         String duration = "";
-        timeTable = new ArrayList<>();
 
         //if no results passed, set a default value and bail
         if(result.size() < 1){
@@ -89,11 +87,11 @@ public class ParserTask extends AsyncTaskLoader<ArrayList<LatLng>> {
 
                 if(j == 0){    // Get distance from the list
                     distance = (String)point.get("distance"); //TODO: Get these back to UI Thread
-                    timeTable.add(distance);
+                    MapsActivity.mDistance.add(distance);
                     continue;
                 }else if(j==1){ // Get duration from the list
                     duration = (String)point.get("duration");
-                    timeTable.add(duration);
+                    MapsActivity.mDuration.add(duration);
                     continue;
                 }
 

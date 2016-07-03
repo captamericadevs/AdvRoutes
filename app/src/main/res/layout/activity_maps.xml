@@ -22,7 +22,7 @@
         android:id="@+id/tv_distance_time"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:gravity="bottom"
+        android:gravity="top"
         android:text="@string/dist_time"
         android:layout_alignParentTop="true" />
 

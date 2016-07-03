@@ -4,8 +4,6 @@ import android.content.Context;
 import android.support.v4.content.AsyncTaskLoader;
 import android.util.Log;
 
-import com.wordpress.captamericadevs.advroutes.MapsActivity;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,14 +12,14 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 /**
- * Created by Parker on 6/27/2016.
+ * Created by Parker on 7/3/2016.
  */
-public class DownloadTask extends AsyncTaskLoader<String> {
+public class DirectionsDownloader extends AsyncTaskLoader<String> {
 
     private String mData;
     private String url;
 
-    public DownloadTask (Context context, String... data){
+    public DirectionsDownloader (Context context, String... data){
         super(context);
         mData = null;
         url = data[0];
