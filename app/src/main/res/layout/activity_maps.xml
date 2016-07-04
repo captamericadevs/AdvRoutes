@@ -1,13 +1,14 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<android.support.design.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:background="@color/colorPrimary"
     tools:context="com.wordpress.captamericadevs.advroutes.MapsActivity">
 
     <include
-        android:id="@+id/main_toolbar"
-        layout="@layout/main_toolbar"
+        android:id="@+id/toolbar_main"
+        layout="@layout/toolbar_main"
         ></include>
 
     <fragment xmlns:android="http://schemas.android.com/apk/res/android"
@@ -18,13 +19,5 @@
         android:layout_height="match_parent"
         tools:context="com.wordpress.captamericadevs.advroutes.MapsActivity" />
 
-    <TextView
-        android:id="@+id/tv_distance_time"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:gravity="top"
-        android:text="@string/dist_time"
-        android:layout_alignParentTop="true" />
-
-
-</RelativeLayout>
+    <include layout="@layout/content_bottom_sheet" android:id="@+id/content_bottom_sheet" />
+</android.support.design.widget.CoordinatorLayout>

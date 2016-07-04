@@ -5,6 +5,8 @@ import android.location.Location;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.os.Bundle;
+import android.support.design.widget.BottomSheetBehavior;
+import android.support.design.widget.CoordinatorLayout;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.Loader;
 import android.support.v7.app.AppCompatActivity;
@@ -12,6 +14,7 @@ import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -38,7 +41,8 @@ public class MapsActivity extends AppCompatActivity implements
         GoogleApiClient.OnConnectionFailedListener,
         GoogleMap.OnMarkerDragListener,
         GoogleMap.OnMapClickListener,
-        GoogleMap.OnMapLongClickListener
+        GoogleMap.OnMapLongClickListener,
+        GoogleMap.OnMarkerClickListener
 {
 
     public int DOWNLOAD_LOADER_ID = 1;
@@ -55,7 +59,9 @@ public class MapsActivity extends AppCompatActivity implements
     public static ArrayList<String> mDuration;
     private double mTotalDist;
     private double mTotalDurt;
-    TextView tvDistanceDuration;
+
+    private TextView mBottomSheetHeader;
+    private BottomSheetBehavior mBottomSheetBehavior;
 
     private GoogleApiClient googleApiClient;
 
@@ -63,16 +69,30 @@ public class MapsActivity extends AppCompatActivity implements
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
-        tvDistanceDuration = (TextView) findViewById(R.id.tv_distance_time);
 
-        Toolbar mainToolbar = (Toolbar) findViewById(R.id.main_toolbar);
+        Toolbar mainToolbar = (Toolbar) findViewById(R.id.toolbar_main);
         setSupportActionBar(mainToolbar);
+
+        final View bottomSheet = findViewById(R.id.content_bottom_sheet);
+        mBottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
+        mBottomSheetHeader = (TextView) findViewById(R.id.bottomSheetHeading);
+        mBottomSheetBehavior.setBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            @Override
+            public void onStateChanged(View bottomSheet, int newState) {
+                if (newState == BottomSheetBehavior.STATE_COLLAPSED) {
+                    mBottomSheetBehavior.setPeekHeight(0);
+                }
+            }
+
+            @Override
+            public void onSlide(View bottomSheet, float slideOffset) {
+            }
+        });
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
-
 
         googleApiClient = new GoogleApiClient.Builder(this).addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
@@ -148,6 +168,32 @@ public class MapsActivity extends AppCompatActivity implements
         mMap.setOnMarkerDragListener(this);
         mMap.setOnMapClickListener(this);
         mMap.setOnMapLongClickListener(this);
+        mMap.setOnMarkerClickListener(this);
+    }
+
+    /**
+     * handle marker click event
+     */
+    @Override
+    public boolean onMarkerClick(Marker marker) {
+        //have the bottomsheet peek up from bottom
+        if (mBottomSheetBehavior.getPeekHeight() != 300) {
+            mBottomSheetBehavior.setPeekHeight(300);
+            mBottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+        }
+
+        //Grad the index of the selected marker (format is "m#")
+        String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
+        int index = Integer.parseInt(temp); //grab index value
+        if(index == 0){ //if index == 0 then you are at the origin
+            mBottomSheetHeader.setText(marker.getTitle());
+        } else if(index == 1){ // if index == 1 get the final leg values
+            mBottomSheetHeader.setText(mDuration.get(mDuration.size()-1) + " " + mDistance.get(mDistance.size()-1));
+        } else { //else, backtrack from the two markers that are out of order (orig, dest)
+            mBottomSheetHeader.setText(mDuration.get(index-2) + " " + mDistance.get(index-2));
+        }
+
+        return true;
     }
 
     //Changed from void to LatLng
@@ -239,6 +285,7 @@ public class MapsActivity extends AppCompatActivity implements
         mDuration = new ArrayList<>();
         mTotalDist = 0.0;
         mTotalDurt = 0.0;
+        mFinished = false;
     }
 
     private String getDirectionsUrl(LatLng origin,LatLng dest){
