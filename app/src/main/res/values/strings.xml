@@ -5,6 +5,9 @@
     <string name="action_settings">Settings</string>
     <string name="bottom_sheet_header">INFO</string>
     <string name="bottom_sheet_text">Text</string>
+    <string name="bottom_sheet_clear">Waiting on route...</string>
+    <string name="km">km</string>
+    <string name="mi">mi</string>
 
     <string name="dist_time">Distance and Time</string>
 

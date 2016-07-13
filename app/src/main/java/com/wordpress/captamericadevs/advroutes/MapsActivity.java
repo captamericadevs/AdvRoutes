@@ -1,13 +1,17 @@
 package com.wordpress.captamericadevs.advroutes;
 
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.location.Geocoder;
 import android.location.Location;
+import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.os.Bundle;
 import android.support.design.widget.BottomSheetBehavior;
-import android.support.design.widget.CoordinatorLayout;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.LoaderManager;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.content.Loader;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
@@ -33,6 +37,7 @@ import com.google.android.gms.maps.model.PolylineOptions;
 import com.wordpress.captamericadevs.advroutes.utils.DirectionsDownloader;
 import com.wordpress.captamericadevs.advroutes.utils.DirectionsParserLoader;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 public class MapsActivity extends AppCompatActivity implements
@@ -51,14 +56,13 @@ public class MapsActivity extends AppCompatActivity implements
     private boolean mFinished = false;
 
     private GoogleMap mMap;
-    private double longitude = 0.0; //Set default LatLng
-    private double latitude = 0.0;
+    private double mLongitude;
+    private double mLatitude;
     ArrayList<LatLng> markerPoints;
 
-    public static ArrayList<String> mDistance;
-    public static ArrayList<String> mDuration;
+    public static ArrayList<String> mDistance; //struct to hold distance of each leg
+    public static ArrayList<String> mDuration; //holds duration of each leg
     private double mTotalDist;
-    private double mTotalDurt;
 
     private TextView mBottomSheetHeader;
     private BottomSheetBehavior mBottomSheetBehavior;
@@ -94,16 +98,12 @@ public class MapsActivity extends AppCompatActivity implements
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        googleApiClient = new GoogleApiClient.Builder(this).addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API)
-                .build();
+        checkLocationPermission();
 
         markerPoints = new ArrayList<LatLng>();
         mDistance = new ArrayList<String>();
         mDuration = new ArrayList<String>();
         mTotalDist = 0.0;
-        mTotalDurt = 0.0;
         mSupportLoaderManager = getSupportLoaderManager();
     }
 
@@ -138,7 +138,7 @@ public class MapsActivity extends AppCompatActivity implements
 
     @Override
     protected void onStart() {
-        googleApiClient.connect();
+        //googleApiClient.connect();
         super.onStart();
     }
 
@@ -160,15 +160,37 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
+        //Initialize Google Play Services
+       if (ContextCompat.checkSelfPermission(this,
+               android.Manifest.permission.ACCESS_FINE_LOCATION)
+               == PackageManager.PERMISSION_GRANTED) {
+           buildGoogleApiClient();
+           mMap.setMyLocationEnabled(true);
 
+        }
+        else {
+            buildGoogleApiClient();
+            mMap.setMyLocationEnabled(true);
+        }
         // Add a marker and move the camera
         getCurrentLocation(); //Place marker at current location if available
-        LatLng latLong = new LatLng(latitude, longitude);
+        LatLng latLong = new LatLng(mLatitude, mLongitude);
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLong));
         mMap.setOnMarkerDragListener(this);
         mMap.setOnMapClickListener(this);
         mMap.setOnMapLongClickListener(this);
         mMap.setOnMarkerClickListener(this);
+        mMap.setTrafficEnabled(true);
+        mMap.getUiSettings().setZoomControlsEnabled(true);
+    }
+
+    protected synchronized void buildGoogleApiClient() {
+        googleApiClient = new GoogleApiClient.Builder(this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(LocationServices.API)
+                .build();
+        googleApiClient.connect();
     }
 
     /**
@@ -186,7 +208,7 @@ public class MapsActivity extends AppCompatActivity implements
         String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
         int index = Integer.parseInt(temp); //grab index value
         if(index == 0){ //if index == 0 then you are at the origin
-            mBottomSheetHeader.setText(marker.getTitle());
+            mBottomSheetHeader.setText(getAddressFromLatLng(markerPoints.get(index)));
         } else if(index == 1){ // if index == 1 get the final leg values
             mBottomSheetHeader.setText(mDuration.get(mDuration.size()-1) + " " + mDistance.get(mDistance.size()-1));
         } else { //else, backtrack from the two markers that are out of order (orig, dest)
@@ -196,12 +218,34 @@ public class MapsActivity extends AppCompatActivity implements
         return true;
     }
 
+    private String getAddressFromLatLng(LatLng latLng) {
+        Geocoder geocoder = new Geocoder(this );
+
+        String address = "";
+        try {
+            address = geocoder
+                    .getFromLocation( latLng.latitude, latLng.longitude, 1 )
+                    .get( 0 ).getAddressLine( 0 );
+        } catch (IOException e ) {
+        }
+
+        return address;
+    }
+
     //Changed from void to LatLng
     private void getCurrentLocation(){
-        Location location = LocationServices.FusedLocationApi.getLastLocation(googleApiClient);
-        if (location != null) {
-            longitude = location.getLongitude();
-            latitude = location.getLatitude();
+        if (ContextCompat.checkSelfPermission(this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            Location location = LocationServices.FusedLocationApi.getLastLocation(googleApiClient);
+
+            if (location != null) {
+                mLongitude = location.getLongitude();
+                mLatitude = location.getLatitude();
+            } else {
+                mLongitude = 0.0;
+                mLatitude = 0.0;
+            }
         }
     }
 
@@ -281,10 +325,11 @@ public class MapsActivity extends AppCompatActivity implements
                 mSupportLoaderManager.destroyLoader(i);
             }
         }
+        mBottomSheetHeader.setText(R.string.bottom_sheet_clear);
+
         mDistance = new ArrayList<>();
         mDuration = new ArrayList<>();
         mTotalDist = 0.0;
-        mTotalDurt = 0.0;
         mFinished = false;
     }
 
@@ -346,8 +391,11 @@ public class MapsActivity extends AppCompatActivity implements
 
     @Override
     public void onMarkerDragEnd(Marker marker) {
-        latitude = marker.getPosition().latitude;
-        longitude = marker.getPosition().longitude;
+        //Grad the index of the selected marker (format is "m#")
+        String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
+        int index = Integer.parseInt(temp); //grab index value
+        //store the new lat/long in the markerPoints array
+        markerPoints.set(index, new LatLng(marker.getPosition().latitude, marker.getPosition().longitude));
 
         //moveMap();
     }
@@ -361,6 +409,7 @@ public class MapsActivity extends AppCompatActivity implements
 
         @Override
         public void onLoadFinished(Loader<String> arg0, String arg1) {
+            //feed the returned json object to the ParserLoader for parsing
             Bundle jsonData = new Bundle();
             jsonData.putString("url", arg1);
             mSupportLoaderManager.initLoader(PARSER_LOADER_ID, jsonData, parserLoaderListener);
@@ -382,30 +431,36 @@ public class MapsActivity extends AppCompatActivity implements
 
         @Override
         public void onLoadFinished(Loader<ArrayList<LatLng>> arg0, ArrayList<LatLng> arg1) {
+            //returned the parsed polyline, so draw it and get the distance
             PolylineOptions lineOptions = new PolylineOptions()
                 .color(Color.BLUE)
-                .width(8)
+                .width(9)
+                .zIndex(30)
                 .addAll(arg1);
             mMap.addPolyline(lineOptions);
             getDistanceAndDuration(mFinished);
             mFinished = true;
         }
 
+        //Calculates the total distance of the route
         private void getDistanceAndDuration(boolean isFinished){
             if(!isFinished){
                 int legs = mDistance.size();
                 Double totalDist = 0.0;
-                Double totalDurt = 0.0;
                 String temp = "";
+                String metric = "";
                 for(int i = 0; i < legs; i++) {
-                    temp = mDistance.get(i).replaceAll("[a-z]", "");
+                    //are we using the metric system?
+                    if (mDistance.get(i).contains("km")){
+                        metric = getResources().getString(R.string.km);
+                    } else {
+                        metric = getResources().getString(R.string.mi);
+                    }
+                    temp = mDistance.get(i).replaceAll("[a-z]", ""); //get rid of alphabet and parsedouble
                     totalDist = totalDist + Double.parseDouble(temp);
-                    temp = mDuration.get(i).replaceAll("[a-zA-Z]", "");
-                    totalDurt = totalDurt + Double.parseDouble(temp);
                 }
-                mTotalDist = totalDist;
-                mTotalDurt = totalDurt;
-                String msg = "Distance: "+ mTotalDist + " mi, Duration: "+ mTotalDurt;
+                mTotalDist = totalDist; //store total
+                String msg = "Distance: "+ mTotalDist + metric;
                 Toast.makeText(MapsActivity.this, msg, Toast.LENGTH_LONG).show();
             }
         }
@@ -415,4 +470,72 @@ public class MapsActivity extends AppCompatActivity implements
 
         }
     };
+
+    /* Reused from Android Tutorial Point 29 April 2016
+    * http://www.androidtutorialpoint.com/intermediate/android-map-app-showing-current-location-android/ */
+    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
+    public boolean checkLocationPermission(){
+        if (ContextCompat.checkSelfPermission(this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            // Asking user if explanation is needed
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+
+                // Show an explanation to the user *asynchronously* -- don't block
+                // this thread waiting for the user's response! After the user
+                // sees the explanation, try again to request the permission.
+
+                //Prompt the user once explanation has been shown
+                ActivityCompat.requestPermissions(this,
+                        new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},
+                        MY_PERMISSIONS_REQUEST_LOCATION);
+
+
+            } else {
+                // No explanation needed, we can request the permission.
+                ActivityCompat.requestPermissions(this,
+                        new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},
+                        MY_PERMISSIONS_REQUEST_LOCATION);
+            }
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_LOCATION: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                    // permission was granted. Do the
+                    // contacts-related task you need to do.
+                    if (ActivityCompat.checkSelfPermission(this,
+                            android.Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+
+                        if (googleApiClient == null) {
+                            buildGoogleApiClient();
+                        }
+                        mMap.setMyLocationEnabled(true);
+                    }
+
+                } else {
+
+                    // Permission denied, Disable the functionality that depends on this permission.
+                    Toast.makeText(this, "permission denied", Toast.LENGTH_LONG).show();
+                }
+                return;
+            }
+
+            // other 'case' lines to check for other permissions this app might request.
+            // You can add here other case statements according to your requirement.
+        }
+    }
 }
