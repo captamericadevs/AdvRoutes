@@ -5,6 +5,7 @@ import android.support.v4.content.AsyncTaskLoader;
 
 import com.google.android.gms.maps.model.LatLng;
 import com.wordpress.captamericadevs.advroutes.MapsActivity;
+import com.wordpress.captamericadevs.advroutes.models.MapModel;
 
 import org.json.JSONObject;
 
@@ -19,11 +20,13 @@ public class DirectionsParserLoader extends AsyncTaskLoader<ArrayList<LatLng>> {
 
     private ArrayList<LatLng> mPoints;
     private String jsonData;
+    private MapModel mData;
 
-    public DirectionsParserLoader (Context context, String... inData){
+    public DirectionsParserLoader (Context context, MapModel data, String... inData){
         super(context);
         jsonData = inData[0];
         mPoints = null;
+        mData = data;
     }
 
     @Override
@@ -59,8 +62,6 @@ public class DirectionsParserLoader extends AsyncTaskLoader<ArrayList<LatLng>> {
         }
 
         mPoints = result;
-//
-//        tvDistanceDuration.setText("Distance:"+distance + ", Duration:"+duration);
     }
 
     /** A method to download json data from url */
@@ -87,11 +88,11 @@ public class DirectionsParserLoader extends AsyncTaskLoader<ArrayList<LatLng>> {
 
                 if(j == 0){    // Get distance from the list
                     distance = (String)point.get("distance"); //TODO: Get these back to UI Thread
-                    MapsActivity.mDistance.add(distance);
+                    mData.setDistance(distance);
                     continue;
                 }else if(j==1){ // Get duration from the list
                     duration = (String)point.get("duration");
-                    MapsActivity.mDuration.add(duration);
+                    mData.setDuration(duration);
                     continue;
                 }
 

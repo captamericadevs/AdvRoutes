@@ -2,9 +2,6 @@ package com.wordpress.captamericadevs.advroutes;
 
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.location.Geocoder;
-import android.location.Location;
-import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.os.Bundle;
@@ -25,55 +22,75 @@ import android.widget.Toast;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
+import com.wordpress.captamericadevs.advroutes.controllers.MapController;
+import com.wordpress.captamericadevs.advroutes.models.MapModel;
 import com.wordpress.captamericadevs.advroutes.utils.DirectionsDownloader;
 import com.wordpress.captamericadevs.advroutes.utils.DirectionsParserLoader;
+import com.wordpress.captamericadevs.advroutes.utils.Logger;
 
-import java.io.IOException;
 import java.util.ArrayList;
 
 public class MapsActivity extends AppCompatActivity implements
-        OnMapReadyCallback,
-        GoogleApiClient.ConnectionCallbacks,
-        GoogleApiClient.OnConnectionFailedListener,
-        GoogleMap.OnMarkerDragListener,
-        GoogleMap.OnMapClickListener,
-        GoogleMap.OnMapLongClickListener,
-        GoogleMap.OnMarkerClickListener
-{
+    OnMapReadyCallback,
+    GoogleApiClient.ConnectionCallbacks,
+    GoogleApiClient.OnConnectionFailedListener,
+    GoogleMap.OnMarkerDragListener,
+    GoogleMap.OnMapClickListener,
+    GoogleMap.OnMapLongClickListener,
+    GoogleMap.OnMarkerClickListener {
 
-    public int DOWNLOAD_LOADER_ID = 1;
-    public int PARSER_LOADER_ID = 2;
     private LoaderManager mSupportLoaderManager;
+    public int downloadLoaderID = 1; //way to keep track of the asynchloaders running
+    public int parserLoaderID = 2;
     private boolean mFinished = false;
 
-    private GoogleMap mMap;
-    private double mLongitude;
-    private double mLatitude;
-    ArrayList<LatLng> markerPoints;
+    private MapModel mMapData = null; //Map Model object := set empty
+    private MapController mMapController = null; // Map Controller object to modify MapModel
 
-    public static ArrayList<String> mDistance; //struct to hold distance of each leg
-    public static ArrayList<String> mDuration; //holds duration of each leg
-    private double mTotalDist;
+    private double mLongitude = 0.0; //default map points of the coast of West Africa
+    private double mLatitude = 0.0;
+    private ArrayList<LatLng> markerPoints = new ArrayList<LatLng>(); //array of points for route markers
 
+    private static ArrayList<String> mDistance = new ArrayList<String>(); //struct to hold distance of each leg
+    private static ArrayList<String> mDuration = new ArrayList<String>(); //holds duration of each leg
+    private double mTotalDist = 0.0;
+
+    //View objects
     private TextView mBottomSheetHeader;
     private BottomSheetBehavior mBottomSheetBehavior;
 
     private GoogleApiClient googleApiClient;
+    private Logger mLog = new Logger();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
 
+        //Set App View
+        setAppFrames();
+
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+
+        //check location enabled or request to enable it
+        checkLocationPermission();
+
+        mSupportLoaderManager = getSupportLoaderManager();
+    }
+
+    /**
+     * Sets the main app activity view
+     */
+    private void setAppFrames() {
         Toolbar mainToolbar = (Toolbar) findViewById(R.id.toolbar_main);
         setSupportActionBar(mainToolbar);
 
@@ -92,21 +109,11 @@ public class MapsActivity extends AppCompatActivity implements
             public void onSlide(View bottomSheet, float slideOffset) {
             }
         });
-
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
-
-        checkLocationPermission();
-
-        markerPoints = new ArrayList<LatLng>();
-        mDistance = new ArrayList<String>();
-        mDuration = new ArrayList<String>();
-        mTotalDist = 0.0;
-        mSupportLoaderManager = getSupportLoaderManager();
     }
 
+    /**
+     * Inflates the options menu at the top in accordance with Android Design guidelines
+     */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
@@ -117,7 +124,7 @@ public class MapsActivity extends AppCompatActivity implements
 
     /**
      * On selecting action bar icons
-     * */
+     */
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         // Take appropriate action for each action item click
@@ -132,138 +139,92 @@ public class MapsActivity extends AppCompatActivity implements
 
     @Override
     protected void onDestroy() {
+        mMapController = null;
         super.onDestroy();
-
     }
 
     @Override
     protected void onStart() {
-        //googleApiClient.connect();
         super.onStart();
     }
 
     @Override
     protected void onStop() {
-        googleApiClient.disconnect();
+        if (googleApiClient != null)
+            googleApiClient.disconnect();
         super.onStop();
     }
 
     /**
-     * Manipulates the map once available.
-     * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
-     */
+    * Manipulates the map once available.
+    * This callback is triggered when the map is ready to be used.
+    * This is where we can add markers or lines, add listeners or move the camera.
+    * If Google Play services is not installed on the device, the user will be prompted to install
+    * it inside the SupportMapFragment. This method will only be triggered once the user has
+    * installed Google Play services and returned to the app.
+    * */
+
     @Override
     public void onMapReady(GoogleMap googleMap) {
-        mMap = googleMap;
-        //Initialize Google Play Services
-       if (ContextCompat.checkSelfPermission(this,
-               android.Manifest.permission.ACCESS_FINE_LOCATION)
-               == PackageManager.PERMISSION_GRANTED) {
-           buildGoogleApiClient();
-           mMap.setMyLocationEnabled(true);
+        //Create our GoogleMap Object if necessary
+        if (mMapData == null) {
+            mMapData = new MapModel(mLatitude, mLongitude);
+        }
 
-        }
-        else {
+        mMapController = new MapController(this, mMapData, googleMap);
+
+        //Initialize Google Play Services
+        if (ContextCompat.checkSelfPermission(this,
+        android.Manifest.permission.ACCESS_FINE_LOCATION)
+        == PackageManager.PERMISSION_GRANTED) {
             buildGoogleApiClient();
-            mMap.setMyLocationEnabled(true);
+            mMapController.setLocationEnabled(true);
         }
-        // Add a marker and move the camera
-        getCurrentLocation(); //Place marker at current location if available
-        LatLng latLong = new LatLng(mLatitude, mLongitude);
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLong));
-        mMap.setOnMarkerDragListener(this);
-        mMap.setOnMapClickListener(this);
-        mMap.setOnMapLongClickListener(this);
-        mMap.setOnMarkerClickListener(this);
-        mMap.setTrafficEnabled(true);
-        mMap.getUiSettings().setZoomControlsEnabled(true);
+
+        // Move the camera
+        mMapController.getCurrentLocation(googleApiClient);
+        LatLng latLong = new LatLng(mMapData.getLatitude(), mMapData.getLongitude());
+        mMapController.initMapSettings(latLong);
     }
 
     protected synchronized void buildGoogleApiClient() {
         googleApiClient = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API)
-                .build();
+            .addConnectionCallbacks(this)
+            .addOnConnectionFailedListener(this)
+            .addApi(LocationServices.API)
+            .build();
         googleApiClient.connect();
     }
 
     /**
-     * handle marker click event
-     */
+    * handle marker click event
+    */
     @Override
     public boolean onMarkerClick(Marker marker) {
-        //have the bottomsheet peek up from bottom
-        if (mBottomSheetBehavior.getPeekHeight() != 300) {
-            mBottomSheetBehavior.setPeekHeight(300);
-            mBottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-        }
+         //have the bottomsheet peek up from bottom
+         if (mBottomSheetBehavior.getPeekHeight() != 300) {
+             mBottomSheetBehavior.setPeekHeight(300);
+             mBottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+         }
 
-        //Grad the index of the selected marker (format is "m#")
-        String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
-        int index = Integer.parseInt(temp); //grab index value
-        if(index == 0){ //if index == 0 then you are at the origin
-            mBottomSheetHeader.setText(getAddressFromLatLng(markerPoints.get(index)));
-        } else if(index == 1){ // if index == 1 get the final leg values
-            mBottomSheetHeader.setText(mDuration.get(mDuration.size()-1) + " " + mDistance.get(mDistance.size()-1));
-        } else { //else, backtrack from the two markers that are out of order (orig, dest)
-            mBottomSheetHeader.setText(mDuration.get(index-2) + " " + mDistance.get(index-2));
-        }
+         //Grad the index of the selected marker (format is "m#")
+         String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
+         int index = Integer.parseInt(temp); //grab index value
+         if(index == 0){ //if index == 0 then you are at the origin
+             mBottomSheetHeader.setText(mMapController.getAddressFromLatLng(mMapData.getMarkerPoint(index)));
+         } else if(index == 1){ // if index == 1 get the final leg values
+             mBottomSheetHeader.setText(mMapData.getDuration(mMapData.getNumDuration()-1) + " " +
+             mMapData.getDistance(mMapData.getNumDistances()-1));
+         } else { //else, backtrack from the two markers that are out of order (orig, dest)
+             mBottomSheetHeader.setText(mMapData.getDuration(index-2) + " " + mMapData.getDistance(index-2));
+         }
 
-        return true;
-    }
-
-    private String getAddressFromLatLng(LatLng latLng) {
-        Geocoder geocoder = new Geocoder(this );
-
-        String address = "";
-        try {
-            address = geocoder
-                    .getFromLocation( latLng.latitude, latLng.longitude, 1 )
-                    .get( 0 ).getAddressLine( 0 );
-        } catch (IOException e ) {
-        }
-
-        return address;
-    }
-
-    //Changed from void to LatLng
-    private void getCurrentLocation(){
-        if (ContextCompat.checkSelfPermission(this,
-                android.Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED) {
-            Location location = LocationServices.FusedLocationApi.getLastLocation(googleApiClient);
-
-            if (location != null) {
-                mLongitude = location.getLongitude();
-                mLatitude = location.getLatitude();
-            } else {
-                mLongitude = 0.0;
-                mLatitude = 0.0;
-            }
-        }
-    }
-
-    private void moveMap() {
-//        String msg = latitude + ", "+ longitude;
-//        LatLng latLng = new LatLng(latitude, longitude);
-//
-//        mMap.addMarker(new MarkerOptions().position(latLng).draggable(true).title("Origin"));
-//
-//        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-//        mMap.animateCamera(CameraUpdateFactory.zoomTo(15));
-//
-//        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+         return true;
     }
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-        getCurrentLocation();
+
     }
 
     @Override
@@ -278,61 +239,44 @@ public class MapsActivity extends AppCompatActivity implements
 
     @Override
     public void onMapClick(LatLng latLng) {
-        if (markerPoints.size() >= 10) //if there are multiple points, clear them all
+        if (mMapData.getNumMarkers() >= 10) //if there are multiple points, clear them all
         {
             return;
         }
 
-        markerPoints.add(latLng); //add point to our array
-        int size = markerPoints.size();
-        drawMarkers(latLng, size);
+        mMapController.addMarkers(latLng);
     }
 
-    public void drawMarkers(LatLng latLng, int size){
-        String markerTitle = "";
-        MarkerOptions nextMarker = new MarkerOptions();
-        nextMarker.position(latLng);
-        nextMarker.draggable(true);
-
-        if (size == 2) //set the end point to RED
-        {
-            nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
-            markerTitle = "Destination";
-        }
-        else if (size == 1) //set the start to GREEN
-        {
-            nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
-            markerTitle = "Origin";
-        }
-        else
-        {
-            nextMarker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
-            markerTitle = "Waypoint";
-        }
-
-        nextMarker.title(markerTitle);
-        mMap.addMarker(nextMarker);
-
-    }
-
+    /**
+     * If the under long clicks the screen, clear the map and MapData structures, destroy any running
+     * asynchloaders
+     * @param latLng
+     */
     @Override
     public void onMapLongClick(LatLng latLng) {
-        if (markerPoints.size() > 0) //if there are multiple points, clear them all
+        Toast.makeText(MapsActivity.this, "Map Cleared!", Toast.LENGTH_LONG).show();
+        if (mMapData.getNumMarkers() > 0) //if there are multiple points, clear them all
         {
-            mMap.clear(); //clear the map
-            markerPoints.clear();
-            for(int i = 1; i <= PARSER_LOADER_ID; i++ ) {
+            mMapController.destroyMap();
+            mMapController.clearMapDisplay();
+
+            for(int i = 1; i <= parserLoaderID; i++ ) {
                 mSupportLoaderManager.destroyLoader(i);
             }
+            parserLoaderID = 2;
+            downloadLoaderID = 1;
         }
         mBottomSheetHeader.setText(R.string.bottom_sheet_clear);
 
-        mDistance = new ArrayList<>();
-        mDuration = new ArrayList<>();
-        mTotalDist = 0.0;
         mFinished = false;
     }
 
+    /**
+     * Take in start and end latlngs then craft RESTful url to pass to GoogleMapsAPI
+     * @param origin
+     * @param dest
+     * @return
+     */
     private String getDirectionsUrl(LatLng origin,LatLng dest){
         // Origin of route
         String str_origin = "origin="+origin.latitude+","+origin.longitude;
@@ -355,26 +299,33 @@ public class MapsActivity extends AppCompatActivity implements
         return url;
     }
 
+    /**
+     * iterate through the list of markers and call downloader/parser asynchloaders to
+     * get leg data from GoogleMapsAPI in JSON format
+     */
     public void getDirections(){
-        int size = markerPoints.size();
+        int size = mMapData.getNumMarkers();
         //sort the point list if the final destination is in position 2 followed by waypoints
+        mLog.i("Size = " + size);
         if(size > 2) {
-            markerPoints.add(markerPoints.get(1)); //put destination at end
-            markerPoints.remove(markerPoints.get(1)); //remove destination at position 2 and shift elements left
+            mMapData.setMarkerPoint(mMapData.getMarkerPoint(1)); //put destination at end
+            mMapData.deleteMarkerPoint(1); //remove destination at position 2 and shift elements left
         }
+        mLog.i("Shifted destination to end of marker array");
         if(size >= 2) {
             //loop through the waypoint list a draw route
             for (int j = 0; j <= size-2; j++) {
-                LatLng origin = markerPoints.get(j);
-                LatLng dest = markerPoints.get(j+1);
+                LatLng origin = mMapData.getMarkerPoint(j);
+                LatLng dest = mMapData.getMarkerPoint(j+1);
 
                 // Getting URL to the Google Directions API
                 String url = getDirectionsUrl(origin, dest);
+                mLog.i("Retrieved URL: " + url);
 
                 Bundle urlString = new Bundle();
                 urlString.putString("url", url);
-                mSupportLoaderManager.initLoader(DOWNLOAD_LOADER_ID, urlString, downloadLoaderListener);
-                DOWNLOAD_LOADER_ID = DOWNLOAD_LOADER_ID + 2;
+                mSupportLoaderManager.initLoader(downloadLoaderID, urlString, downloadLoaderListener);
+                downloadLoaderID = downloadLoaderID + 2;
             }
         }
     }
@@ -394,10 +345,9 @@ public class MapsActivity extends AppCompatActivity implements
         //Grad the index of the selected marker (format is "m#")
         String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
         int index = Integer.parseInt(temp); //grab index value
-        //store the new lat/long in the markerPoints array
-        markerPoints.set(index, new LatLng(marker.getPosition().latitude, marker.getPosition().longitude));
 
-        //moveMap();
+        //store the new lat/long in the markerPoints array
+        mMapData.updateMarkerPoint(index, new LatLng(marker.getPosition().latitude, marker.getPosition().longitude));
     }
 
     private LoaderManager.LoaderCallbacks<String> downloadLoaderListener = new LoaderManager.LoaderCallbacks<String>() {
@@ -412,8 +362,9 @@ public class MapsActivity extends AppCompatActivity implements
             //feed the returned json object to the ParserLoader for parsing
             Bundle jsonData = new Bundle();
             jsonData.putString("url", arg1);
-            mSupportLoaderManager.initLoader(PARSER_LOADER_ID, jsonData, parserLoaderListener);
-            PARSER_LOADER_ID = PARSER_LOADER_ID + 2;
+            mLog.i("Initiating ParserLoader");
+            mSupportLoaderManager.initLoader(parserLoaderID, jsonData, parserLoaderListener);
+            parserLoaderID = parserLoaderID + 2;
         }
 
         @Override
@@ -425,7 +376,7 @@ public class MapsActivity extends AppCompatActivity implements
     private LoaderManager.LoaderCallbacks<ArrayList<LatLng>> parserLoaderListener = new LoaderManager.LoaderCallbacks<ArrayList<LatLng>>() {
         @Override
         public Loader<ArrayList<LatLng>> onCreateLoader(int id, Bundle args) {
-            return new DirectionsParserLoader(MapsActivity.this, args.getString("url"));
+            return new DirectionsParserLoader(MapsActivity.this, mMapData, args.getString("url"));
         }
 
 
@@ -437,31 +388,36 @@ public class MapsActivity extends AppCompatActivity implements
                 .width(9)
                 .zIndex(30)
                 .addAll(arg1);
-            mMap.addPolyline(lineOptions);
-            getDistanceAndDuration(mFinished);
+            mMapController.addPolyline(lineOptions);
+            mLog.i("Created Polyline");
+            getTotDistance(mFinished);
             mFinished = true;
         }
 
-        //Calculates the total distance of the route
-        private void getDistanceAndDuration(boolean isFinished){
+        /**
+         * Calculates the total distance of the route
+         * Currently crashes at Toast invokation
+         */
+
+        private void getTotDistance(boolean isFinished){
             if(!isFinished){
-                int legs = mDistance.size();
-                Double totalDist = 0.0;
-                String temp = "";
-                String metric = "";
-                for(int i = 0; i < legs; i++) {
-                    //are we using the metric system?
-                    if (mDistance.get(i).contains("km")){
-                        metric = getResources().getString(R.string.km);
-                    } else {
-                        metric = getResources().getString(R.string.mi);
-                    }
-                    temp = mDistance.get(i).replaceAll("[a-z]", ""); //get rid of alphabet and parsedouble
-                    totalDist = totalDist + Double.parseDouble(temp);
-                }
-                mTotalDist = totalDist; //store total
-                String msg = "Distance: "+ mTotalDist + metric;
-                Toast.makeText(MapsActivity.this, msg, Toast.LENGTH_LONG).show();
+//                int legs = mMapData.getNumDistances();
+//                Double totalDist = 0.0;
+//                String temp = "";
+//                String metric = "";
+//                for(int i = 0; i < legs; i++) {
+//                    //are we using the metric system?
+//                    if (mMapData.getDistance(i).contains("km")){
+//                        metric = getResources().getString(R.string.km);
+//                    } else {
+//                        metric = getResources().getString(R.string.mi);
+//                    }
+//                    temp = mMapData.getDistance(i).replaceAll("[a-z]", ""); //get rid of alphabet and parsedouble
+//                    totalDist = totalDist + Double.parseDouble(temp);
+//                }
+//                mMapData.setTotalDist(totalDist); //store total
+//                String msg = "Distance: "+ mMapData.getTotalDist() + metric;
+//                Toast.makeText(MapsActivity.this, mMapController.TotalDistance(), Toast.LENGTH_LONG).show();
             }
         }
 
@@ -492,7 +448,6 @@ public class MapsActivity extends AppCompatActivity implements
                         new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},
                         MY_PERMISSIONS_REQUEST_LOCATION);
 
-
             } else {
                 // No explanation needed, we can request the permission.
                 ActivityCompat.requestPermissions(this,
@@ -508,6 +463,7 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            String permissions[], int[] grantResults) {
+        mLog.i("had to request location permission");
         switch (requestCode) {
             case MY_PERMISSIONS_REQUEST_LOCATION: {
                 // If request is cancelled, the result arrays are empty.
@@ -523,7 +479,7 @@ public class MapsActivity extends AppCompatActivity implements
                         if (googleApiClient == null) {
                             buildGoogleApiClient();
                         }
-                        mMap.setMyLocationEnabled(true);
+                        mMapController.setLocationEnabled(true);
                     }
 
                 } else {
