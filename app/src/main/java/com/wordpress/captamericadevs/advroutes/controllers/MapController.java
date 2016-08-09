@@ -2,6 +2,7 @@ package com.wordpress.captamericadevs.advroutes.controllers;
 
 import android.app.Application;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Geocoder;
 import android.location.Location;
 import android.support.v4.content.ContextCompat;
@@ -13,21 +14,26 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.wordpress.captamericadevs.advroutes.MapsActivity;
 import com.wordpress.captamericadevs.advroutes.R;
 import com.wordpress.captamericadevs.advroutes.models.MapModel;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 /**
- * Created by Parker on 7/18/2016.
+ * Controller class to manipulate map data
+ *
+ * @author Will Parker
+ * @version 2016.0807
  */
 public class MapController extends Application {
     private MapsActivity mActivity;
     private MapModel mMapObj;
     private GoogleMap mMap;
-    private PolylineOptions mRoute;
+    private Polyline mRoute;
 
     //default constructor
     public MapController(){
@@ -48,7 +54,9 @@ public class MapController extends Application {
         mMap.setMyLocationEnabled(value);
     }
 
-    //initialize the map display
+    /**
+     * initialize the map display
+     */
     public void initMapSettings(LatLng latLong){
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLong));
         mMap.setOnMarkerDragListener(mActivity);
@@ -59,7 +67,10 @@ public class MapController extends Application {
         mMap.getUiSettings().setZoomControlsEnabled(true);
     }
 
-    //get the Google Map
+    /**
+     * get the Google Map
+     * @return mMap
+     */
     public GoogleMap getRouteMap(){
         return mMap;
     }
@@ -92,22 +103,29 @@ public class MapController extends Application {
      * to drawMarkers array
      * @param latLng
      */
-    public void addMarkers(LatLng latLng){
-        mMapObj.setMarkerPoint(latLng);
+    public void addMarkers(LatLng latLng, boolean newPoint){
+        if(newPoint == true)
+            mMapObj.setMarkerPoint(latLng);
         int size = mMapObj.getNumMarkers();
         drawMarkers(latLng, size);
     }
 
-    public void addPolyline(PolylineOptions options){
-        mRoute = options;
-        mMap.addPolyline(mRoute);
+    public void addPolyline(ArrayList<LatLng> points){
+        PolylineOptions lineOptions = new PolylineOptions()
+                .color(Color.BLUE)
+                .width(9)
+                .zIndex(30)
+                .addAll(points);
+        mRoute = mMap.addPolyline(lineOptions);
+        mMapObj.setPolyline(mRoute);
     }
 
     /**
      * Deletes the data on the map
-     * TODO: Find a way to remove the polyline and rest it on MapLongClick
      */
     public void clearMapDisplay(){
+        if (mRoute != null)
+            mRoute.remove();
         mMapObj.clearData(); //clear the map
     }
 

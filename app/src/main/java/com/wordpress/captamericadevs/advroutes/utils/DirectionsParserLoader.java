@@ -14,7 +14,11 @@ import java.util.HashMap;
 import java.util.List;
 
 /**
- * Created by Parker on 7/3/2016.
+ * Utility class for asynchronously parsing the directions JSON object
+ *
+ * @author Will Parker with methods from wptrafficanalyzer.in
+ * @version 2016.0703
+ *
  */
 public class DirectionsParserLoader extends AsyncTaskLoader<ArrayList<LatLng>> {
 

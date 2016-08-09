@@ -1,34 +1,47 @@
 package com.wordpress.captamericadevs.advroutes.models;
 
+import android.os.Parcel;
+import android.os.Parcelable;
+import android.util.Log;
+
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.PolylineOptions;
+import com.google.android.gms.maps.model.Polyline;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 
 /**
- * Created by Parker on 7/18/2016.
+ * Object class for holding the data associated with the map (Model)
+ *
+ * @author Will Parker
+ * @version 2016.0807
  */
-public class MapModel {
+public class MapModel  implements Parcelable {
     private double mLongitude;
     private double mLatitude;
 
-    private ArrayList<LatLng> markerPoints = new ArrayList<LatLng>();
+    private ArrayList<LatLng> markerPoints;
+    private ArrayList<LatLng> mRoute;
     private static ArrayList<String> mDistance; //struct to hold distance of each leg
     private static ArrayList<String> mDuration; //holds duration of each leg
     private double mTotalDist;
+    private boolean mFill;
 
     public MapModel(double lng, double lat){
         if (lng > 180 || lng < -180)
             throw new IllegalArgumentException(lng + "is out of bounds");
-        if (lat > 85 || lat < -85)
+        if (lat > 90 || lat < -90)
             throw new IllegalArgumentException(lat + "is out of bounds");
 
         this.mLongitude = lng;
         this.mLatitude = lat;
         this.markerPoints = new ArrayList<LatLng>();
+        this.mRoute = new ArrayList<LatLng>();
         this.mDistance = new ArrayList<String>();
         this.mDuration = new ArrayList<String>();
         this.mTotalDist = 0.0;
+        this.mFill = false;
     }
 
     public void clearData(){
@@ -36,6 +49,15 @@ public class MapModel {
         mDistance.clear();
         mDuration.clear();
         mTotalDist = 0.0;
+        mFill = false;
+        mRoute.clear();
+    }
+
+    /******************************************************************************
+     * GETTER & SETTER METHODS
+     *****************************************************************************/
+    public boolean getFillStatus(){
+        return mFill;
     }
 
     //Get/Set the longitude
@@ -61,8 +83,31 @@ public class MapModel {
         return markerPoints.get(pPosition);
     }
     public void setMarkerPoint(LatLng point){
+        mFill = true;
         markerPoints.add(point);
     }
+    public void setPolyline (Polyline route){
+        mFill = true;
+        mRoute = getPolyline(route);
+    }
+    public ArrayList<LatLng> getPolylinePoints(){
+        return mRoute;
+    }
+    public ArrayList<LatLng> getPolyline(Polyline route){
+        ArrayList<LatLng> tmp = new ArrayList<LatLng>();
+        if (route != null) {
+            Iterator<LatLng> itrTmp = route.getPoints().iterator();
+            while (itrTmp.hasNext()) {
+                LatLng latLong = itrTmp.next();
+                tmp.addAll(Arrays.asList(latLong));
+            }
+            Log.i("MapsActivity", "Polyline = " + tmp.toString());
+        }
+        else
+            tmp = null;
+        return tmp;
+    }
+
     public void updateMarkerPoint(int index, LatLng latLong){
         if (index > markerPoints.size())
             throw new IndexOutOfBoundsException("Marker does not exist");
@@ -93,7 +138,8 @@ public class MapModel {
     //Get/Set the duration arraylist
     public String getDuration(int legnum) {
         if (legnum > mDuration.size())
-            throw new IndexOutOfBoundsException("No matching leg index " + legnum + " in duration array. Size() = " + mDuration.size());
+            throw new IndexOutOfBoundsException("No matching leg index " + legnum
+                    + " in duration array. Size() = " + mDuration.size());
         return mDuration.get(legnum);
     }
     public void setDuration(String durt){
@@ -110,4 +156,42 @@ public class MapModel {
     public void setTotalDist(double total){
         mTotalDist = total;
     }
+
+    /******************************************************************************
+     * Parcelling methods
+     *****************************************************************************/
+    public MapModel(Parcel in){
+        mLongitude = in.readDouble();
+        mLatitude = in.readDouble();
+        in.readTypedList(markerPoints, LatLng.CREATOR);
+        in.readTypedList(mRoute, LatLng.CREATOR);
+        mDistance = (ArrayList<String>) in.readSerializable();
+        mDuration = (ArrayList<String>) in.readSerializable();
+        mTotalDist = in.readDouble();
+
+        if(markerPoints.size() > 0)
+            mFill = true;
+    }
+
+    @Override
+    public int describeContents(){
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeDouble(this.mLongitude);
+        dest.writeDouble(this.mLatitude);
+        dest.writeTypedList(this.markerPoints);
+        dest.writeTypedList(this.mRoute);
+        dest.writeSerializable(this.mDistance);
+        dest.writeSerializable(this.mDuration);
+        dest.writeDouble(this.mTotalDist);
+    }
+    public static final Parcelable.Creator<MapModel> CREATOR = new Parcelable.Creator<MapModel>(){
+        public MapModel createFromParcel(Parcel in){
+            return new MapModel(in);
+        }
+        public MapModel[] newArray(int size){return new MapModel[size];}
+    };
 }

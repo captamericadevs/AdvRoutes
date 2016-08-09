@@ -1,7 +1,6 @@
 package com.wordpress.captamericadevs.advroutes;
 
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.os.Bundle;
@@ -27,7 +26,6 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.PolylineOptions;
 import com.wordpress.captamericadevs.advroutes.controllers.MapController;
 import com.wordpress.captamericadevs.advroutes.models.MapModel;
 import com.wordpress.captamericadevs.advroutes.utils.DirectionsDownloader;
@@ -35,6 +33,13 @@ import com.wordpress.captamericadevs.advroutes.utils.DirectionsParserLoader;
 import com.wordpress.captamericadevs.advroutes.utils.Logger;
 
 import java.util.ArrayList;
+
+/**
+ * Main Activity
+ *
+ * @author Will Parker
+ * @version 2016.0807
+ */
 
 public class MapsActivity extends AppCompatActivity implements
     OnMapReadyCallback,
@@ -46,20 +51,12 @@ public class MapsActivity extends AppCompatActivity implements
     GoogleMap.OnMarkerClickListener {
 
     private LoaderManager mSupportLoaderManager;
-    public int downloadLoaderID = 1; //way to keep track of the asynchloaders running
-    public int parserLoaderID = 2;
+    public int downloadLoaderID; //way to keep track of the asynchloaders running
+    public int parserLoaderID;
     private boolean mFinished = false;
 
-    private MapModel mMapData = null; //Map Model object := set empty
-    private MapController mMapController = null; // Map Controller object to modify MapModel
-
-    private double mLongitude = 0.0; //default map points of the coast of West Africa
-    private double mLatitude = 0.0;
-    private ArrayList<LatLng> markerPoints = new ArrayList<LatLng>(); //array of points for route markers
-
-    private static ArrayList<String> mDistance = new ArrayList<String>(); //struct to hold distance of each leg
-    private static ArrayList<String> mDuration = new ArrayList<String>(); //holds duration of each leg
-    private double mTotalDist = 0.0;
+    private MapModel mMapData; //Map Model object
+    private MapController mMapController;
 
     //View objects
     private TextView mBottomSheetHeader;
@@ -85,6 +82,19 @@ public class MapsActivity extends AppCompatActivity implements
         checkLocationPermission();
 
         mSupportLoaderManager = getSupportLoaderManager();
+
+        //Create our GoogleMap Object
+        mMapData = new MapModel(0.0, 0.0);
+
+        if(savedInstanceState != null){
+            mMapData = savedInstanceState.getParcelable("MapObj");
+        }
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState){
+        super.onSaveInstanceState(outState);
+        outState.putParcelable("MapObj",mMapData);
     }
 
     /**
@@ -140,6 +150,7 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     protected void onDestroy() {
         mMapController = null;
+
         super.onDestroy();
     }
 
@@ -166,11 +177,6 @@ public class MapsActivity extends AppCompatActivity implements
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
-        //Create our GoogleMap Object if necessary
-        if (mMapData == null) {
-            mMapData = new MapModel(mLatitude, mLongitude);
-        }
-
         mMapController = new MapController(this, mMapData, googleMap);
 
         //Initialize Google Play Services
@@ -183,6 +189,12 @@ public class MapsActivity extends AppCompatActivity implements
 
         // Move the camera
         mMapController.getCurrentLocation(googleApiClient);
+        for (int i = 0; i < mMapData.getNumMarkers(); i++){
+            mMapController.addMarkers(mMapData.getMarkerPoint(i), false);
+        }
+        if (mMapData.getPolylinePoints().size() > 1){
+            mMapController.addPolyline(mMapData.getPolylinePoints());
+        }
         LatLng latLong = new LatLng(mMapData.getLatitude(), mMapData.getLongitude());
         mMapController.initMapSettings(latLong);
     }
@@ -209,14 +221,26 @@ public class MapsActivity extends AppCompatActivity implements
 
          //Grad the index of the selected marker (format is "m#")
          String temp = marker.getId().replaceAll("[a-zA-Z]", ""); //remove prefix
+         String displayText = "";
          int index = Integer.parseInt(temp); //grab index value
+         displayText = mMapController.getAddressFromLatLng((mMapData.getMarkerPoint(index)));
+
          if(index == 0){ //if index == 0 then you are at the origin
-             mBottomSheetHeader.setText(mMapController.getAddressFromLatLng(mMapData.getMarkerPoint(index)));
+             mBottomSheetHeader.setText(displayText);
          } else if(index == 1){ // if index == 1 get the final leg values
-             mBottomSheetHeader.setText(mMapData.getDuration(mMapData.getNumDuration()-1) + " " +
-             mMapData.getDistance(mMapData.getNumDistances()-1));
+             if (mMapData.getNumDuration() > 0) {
+                 displayText = displayText + "\n"
+                         + mMapData.getDuration(mMapData.getNumDuration() - 1) + " "
+                         + mMapData.getDistance(mMapData.getNumDistances() - 1);
+             }
+             mBottomSheetHeader.setText(displayText);
          } else { //else, backtrack from the two markers that are out of order (orig, dest)
-             mBottomSheetHeader.setText(mMapData.getDuration(index-2) + " " + mMapData.getDistance(index-2));
+             if (mMapData.getNumDuration() > 1) {
+                 displayText = displayText + "\n"
+                         + mMapData.getDuration(index-2) + " "
+                         + mMapData.getDistance(index-2);
+             }
+             mBottomSheetHeader.setText(displayText);
          }
 
          return true;
@@ -240,11 +264,10 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     public void onMapClick(LatLng latLng) {
         if (mMapData.getNumMarkers() >= 10) //if there are multiple points, clear them all
-        {
             return;
-        }
-
-        mMapController.addMarkers(latLng);
+        mMapData.setLongitude(latLng.longitude);
+        mMapData.setLatitude(latLng.latitude);
+        mMapController.addMarkers(latLng, true);
     }
 
     /**
@@ -382,15 +405,9 @@ public class MapsActivity extends AppCompatActivity implements
 
         @Override
         public void onLoadFinished(Loader<ArrayList<LatLng>> arg0, ArrayList<LatLng> arg1) {
-            //returned the parsed polyline, so draw it and get the distance
-            PolylineOptions lineOptions = new PolylineOptions()
-                .color(Color.BLUE)
-                .width(9)
-                .zIndex(30)
-                .addAll(arg1);
-            mMapController.addPolyline(lineOptions);
+            mMapController.addPolyline(arg1);
             mLog.i("Created Polyline");
-            getTotDistance(mFinished);
+            //getTotDistance(mFinished);
             mFinished = true;
         }
 
